@@ -22,10 +22,13 @@ errors: list[str] = []
 warnings: list[str] = []
 info: list[str] = []
 
+# v0.2 tiers describe WHAT THE STUDIO SHARES, not what they write. Rules specs, state
+# schemas, action enumeration and the effect DSL are produced by the receiving team from
+# the source -- requiring them here contradicts ASK.md, which an end-to-end test caught.
 REQUIRED_BY_TIER = {
-    0: ["MANIFEST.json", "cards/cards.json", "NOTES.md"],
-    1: ["rules/state-schema.json", "rules/actions.md", "cards/effects.md"],
-    2: [],
+    0: ["MANIFEST.json", "NOTES.md"],   # + content/ and replays/, checked separately
+    1: [],                              # tier 1 adds code read access, not more files
+    2: [],                              # tier 2 adds a headless container
 }
 
 NOTES_SECTIONS = [
@@ -114,6 +117,12 @@ def check_required_files(root: Path, tier: int):
             errors.append(f"missing required file for tier {tier}: {rel}")
     if not (root / "replays").is_dir():
         errors.append("missing required directory: replays/")
+    content = root / "content"
+    if not content.is_dir() or not any(content.iterdir()):
+        errors.append(
+            "missing or empty content/ -- the studio's data files, copied as-is. This is the "
+            "one thing that cannot be reconstructed from anything else."
+        )
 
 
 def check_checksums(root: Path, manifest: dict):
@@ -139,7 +148,13 @@ def check_checksums(root: Path, manifest: dict):
 
 
 def check_cards(root: Path, manifest: dict):
-    data = load_json(root / "cards" / "cards.json", "cards/cards.json")
+    """cards.json is OPTIONAL in v0.2: the receiving team produces it from the source.
+    When a studio does ship one, validate it fully."""
+    path = root / "cards" / "cards.json"
+    if not path.exists():
+        info.append("no cards/cards.json -- fine: the receiving team builds it from content/ and the source")
+        return set()
+    data = load_json(path, "cards/cards.json")
     if data is None:
         return set()
     cards = data.get("cards")
@@ -218,6 +233,7 @@ def check_replays(root: Path, card_ids: set[str]):
     dist_missing: set[str] = set()
     sites_unnamed = [0]
     total_draws = [0]
+    site_profiles: list[frozenset] = []
 
     for p in files:
         data = load_json(p, p.name)
@@ -242,6 +258,15 @@ def check_replays(root: Path, card_ids: set[str]):
                     break
                 if "result" not in e:
                     errors.append(f"{p.name}: random_log[{n}] has no 'result'")
+                else:
+                    bad = _unstable_ids(e["result"])
+                    if bad:
+                        errors.append(
+                            f"{p.name}: random_log[{n}] result contains unstable identifiers "
+                            f"(e.g. {bad!r}). Object reprs and memory addresses are neither "
+                            "reproducible nor meaningful to a reimplementation -- log stable "
+                            "card ids, or indices into the input sequence."
+                        )
                 if not e.get("where"):
                     sites_unnamed[0] += 1
                 if e.get("kind") == "int" and "range" not in e:
@@ -249,6 +274,7 @@ def check_replays(root: Path, card_ids: set[str]):
                 if e.get("kind") == "bool" and "p" not in e:
                     dist_missing.add(e.get("where") or f"<unnamed @{n}>")
             total_draws[0] += len(rlog)
+            site_profiles.append(frozenset(e.get("where") for e in rlog if e.get("where")))
 
         setup = data.get("setup") or {}
         players = setup.get("players") or []
@@ -256,7 +282,7 @@ def check_replays(root: Path, card_ids: set[str]):
             errors.append(f"{p.name}: setup.players needs at least 2 entries")
         for pl in players:
             for cid in (pl.get("deck") or []):
-                if card_ids and cid not in card_ids:
+                if card_ids and isinstance(cid, str) and cid not in card_ids:
                     errors.append(f"{p.name}: deck references unknown card id '{cid}'")
 
         actions = data.get("actions") or []
@@ -287,6 +313,15 @@ def check_replays(root: Path, card_ids: set[str]):
             "A recorded 2 falls inside both [1,3] and [1,4], so without 'range'/'p' a rebuild can "
             "reproduce every replay and still generate out-of-distribution games. Add the distribution."
         )
+    all_sites = set().union(*site_profiles) if site_profiles else set()
+    if all_sites:
+        info.append(f"{len(all_sites)} distinct random call sites across the corpus")
+    if len(site_profiles) > 3 and len(set(site_profiles)) == 1:
+        warnings.append(
+            "every replay exercises the SAME set of random call sites -- the corpus has no "
+            "path diversity, so a bug in any unexercised branch passes the whole suite. "
+            "coverage_tags claiming otherwise would be false confidence (reference/04-golden-replays.md)"
+        )
     if sites_unnamed[0]:
         warnings.append(
             f"{sites_unnamed[0]} random_log entries have no 'where' label -- a divergence can then "
@@ -294,16 +329,37 @@ def check_replays(root: Path, card_ids: set[str]):
         )
     if hashed_per_action < n:
         info.append(f"{n - hashed_per_action} replays have no per-action state hashes (optional)")
-    # Thresholds scale with corpus size: a 20-replay starter bundle cannot carry 10 of each slice.
-    want = 1 if n < 60 else 10
-    for tag in ("bespoke_cards", "trigger_collision", "win_condition"):
-        if tags.get(tag, 0) < want:
-            warnings.append(
-                f"coverage tag '{tag}': {tags.get(tag, 0)} replays, {want}+ recommended at this "
-                f"corpus size ({n} replays)"
-            )
+    # Coverage tags are the studio's own vocabulary -- a fixed list ("bespoke_cards",
+    # "trigger_collision") is card-game-specific and does not fit every game. Check that
+    # SOMETHING beyond a single bucket is tagged, and leave the taxonomy to them.
+    if not tags:
+        warnings.append(
+            "no replay carries coverage_tags -- without them nobody can tell whether the corpus "
+            "covers each deck, each win condition, and the awkward cards (reference/04-golden-replays.md)"
+        )
+    elif len(tags) < 2:
+        warnings.append(
+            f"all replays share one coverage tag ({next(iter(tags))}) -- random games under-sample "
+            "exactly the behavior that is hardest to reimplement"
+        )
     if tags:
         info.append("coverage tags: " + ", ".join(f"{k}={v}" for k, v in sorted(tags.items())))
+
+
+_UNSTABLE = re.compile(r"<[\w.]+ object at 0x[0-9a-f]+>|0x[0-9a-f]{8,}|object at ")
+
+
+def _unstable_ids(result):
+    """Catch object reprs / memory addresses in a logged result.
+
+    Found by an end-to-end test: a permutation logged as Python object reprs is both
+    non-reproducible and useless to the other side, and nothing in the spec forbade it.
+    """
+    vals = result if isinstance(result, list) else [result]
+    for v in vals:
+        if isinstance(v, str) and _UNSTABLE.search(v):
+            return v[:60]
+    return None
 
 
 def check_notes(root: Path):

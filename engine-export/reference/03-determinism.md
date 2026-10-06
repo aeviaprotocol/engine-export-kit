@@ -39,6 +39,17 @@ Every random decision, appended in the order it happens:
 
 `kind` is one of `int`, `bool`, `choice`, `permutation`, `float`. `seq` is contiguous from 0.
 
+**`result` must use stable, serializable identifiers** — card ids, or indices into the input
+sequence. Not object references, not `repr()` output, never memory addresses. This sounds
+obvious and is the first thing a real export gets wrong: dumping a shuffled deck with the
+language's default serializer yields something like
+`"<game.Card object at 0x7a3e8e...>"`, which is different on every run and means nothing to
+anyone else. The validator rejects it.
+
+**For `choice`, option order matters.** The receiving engine must offer the same options in
+the same order, or a recorded choice is ambiguous. If your order is not obvious from the
+data, say what it is.
+
 Practically: wrap your random calls in a logging helper, or monkeypatch the RNG in a debug
 build. If your engine already has a replay or spectate feature, you may have most of this.
 

@@ -6,9 +6,19 @@ headless, deterministic, reproducible simulator — and *prove* the rebuild is f
 
 You do not send source code. You send an export.
 
-**Status: v0.2.** The specification is complete and the validator is tested. It has not yet
-been run end to end against a commercial engine. Expect rough edges on first contact, and
-please open an issue when you hit one — that feedback is the point of this being public.
+**Status: v0.3 — now tested end to end.** Run as both sides against two real open-source
+games: [RLCard](https://github.com/datamllab/rlcard)'s UNO for the full loop (export →
+validate → rebuild from scratch → **20/20 replays reproduced exactly**), and
+[Forge](https://github.com/Card-Forge/forge)'s 34,074 Magic card scripts to check the
+effect model at commercial scale.
+
+That test found five real bugs in this kit, all now fixed. The most useful one: mutation
+testing planted a bug in a code path no replay exercised, and it passed every replay — while
+the bundle's coverage tags claimed that path was covered. **Coverage tags must be derived
+from the run, not asserted**, and the kit now says so and reports the evidence instead.
+
+Still not run against a closed commercial engine. Please open an issue when you hit a rough
+edge — that is what this being public is for.
 
 **v0.2 removed the biggest obstacle.** v0.1 required a seedable, single-source RNG. It no
 longer does: replays carry a log of the random outcomes that actually occurred, and a

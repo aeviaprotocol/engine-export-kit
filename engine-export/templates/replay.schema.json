@@ -212,7 +212,7 @@
             ]
           },
           "result": {
-            "description": "What came out. For permutation, the resulting order (or indices)."
+            "description": "What came out, using STABLE SERIALIZABLE IDENTIFIERS -- card ids, or indices into the input sequence. Never object references, reprs or memory addresses: those are neither reproducible across runs nor meaningful to a reimplementation. (A real export got this wrong first try, so it is worth stating.) For permutation, the resulting order."
           },
           "range": {
             "type": "array",
@@ -229,7 +229,7 @@
           },
           "options_count": {
             "type": "integer",
-            "description": "For kind=choice, how many options were offered."
+            "description": "For kind=choice, how many options were offered. The receiving engine must offer them in the SAME ORDER, or a recorded choice is ambiguous -- declare that order if it is not obvious."
           }
         }
       }

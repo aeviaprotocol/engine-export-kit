@@ -60,6 +60,24 @@ is wrong somewhere" and "our clone is wrong on card_014's trigger order".
 
 ---
 
+## Coverage tags must be DERIVED, not asserted
+
+Tag each replay from **what actually happened during the run**, by instrumenting the
+recorder — not by assigning labels you believe should apply.
+
+This is not pedantry. In a real end-to-end test of this kit, an exporter assigned
+`deck_reshuffle` to every seventh game by arithmetic. Not one of the twenty games ever
+reshuffled the deck. A deliberately planted bug inside the reshuffle path then passed all
+twenty replays, because no replay reached it — while the bundle advertised coverage of
+exactly that mechanic.
+
+**A fabricated tag is worse than no tag**: it converts missing coverage into false
+confidence.
+
+The `random_log` makes this checkable for free. The set of `where` labels a replay contains
+*is* the set of random code paths it exercised. Derive tags from that, and from whatever
+non-random branches you can cheaply instrument.
+
 ## Coverage — don't just generate 100 random games
 
 Random games under-sample exactly the behavior that is hardest to reimplement. Deliberately

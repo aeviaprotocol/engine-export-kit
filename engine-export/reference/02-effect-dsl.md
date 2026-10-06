@@ -55,11 +55,47 @@ than approximating the tail.
 
 ---
 
+## Named bindings — required, not optional
+
+The vocabulary below is not enough on its own. A card pool of any real size needs **named,
+reusable sub-logic**: a value computed once and referenced in several places, or a
+sub-effect chained after another.
+
+Measured against Forge's 34,074 Magic card scripts: **75.4% of cards use a named variable**
+(`SVar`), and chained sub-effects (`SubAbility$`) are routine. A DSL without this cannot
+express three quarters of a real collection, however long its operation list is.
+
+```json
+{
+  "definitions": {
+    "X": {"dynamic": "count", "selector": "self_minion", "filter": {"subtype": "beast"}}
+  },
+  "effects": [
+    {"op": "deal_damage", "amount": {"ref": "X"}, "target": {"selector": "enemy_hero"}},
+    {"op": "draw",        "amount": {"ref": "X"}, "target": {"selector": "self_player"},
+     "then": {"op": "discard", "amount": 1, "target": {"selector": "self_player"}}}
+  ]
+}
+```
+
+Three things this gives you, each of which is otherwise impossible:
+
+- **One evaluation, many uses.** `X` is computed once. Writing the expression twice is a different card whenever state changes mid-resolution.
+- **Chaining.** `then` runs only if the parent effect resolved, which is distinct from being the next item in `effects`.
+- **Scope.** Document whether a definition is visible to chained sub-effects and to triggers the effect creates. Getting this wrong is a silent divergence.
+
 ## Primitive vocabulary
 
 A starting set. **Extend it to fit your game** — this is a template, not a standard. What
 matters is that it is closed, documented, and that every composed card uses only listed
 primitives.
+
+**Expect to need far more than this list.** Measured on Forge: **194 distinct operations,
+253 keywords, and 1,207 distinct parameter names** across 34,074 cards. The encouraging half
+of that measurement: **24 operations cover 80% of all occurrences and 64 cover 95%**, while
+15% of the vocabulary appears in two cards or fewer. So build the top 25 first, get most of
+the collection working, and treat the tail as the tail — but do not plan for 25 to be the
+final number.
 
 **Effect operations.** `deal_damage` · `heal` · `draw` · `discard` · `destroy` ·
 `transform` · `summon` · `return_to_hand` · `modify_stats` (temporary or permanent) ·
