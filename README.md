@@ -6,9 +6,14 @@ headless, deterministic, reproducible simulator — and *prove* the rebuild is f
 
 You do not send source code. You send an export.
 
-**Status: v0.1.** The specification is complete and the validator is tested. It has not yet
+**Status: v0.2.** The specification is complete and the validator is tested. It has not yet
 been run end to end against a commercial engine. Expect rough edges on first contact, and
-please open an issue when you hit one — that feedback is the point of v0.1 being public.
+please open an issue when you hit one — that feedback is the point of this being public.
+
+**v0.2 removed the biggest obstacle.** v0.1 required a seedable, single-source RNG. It no
+longer does: replays carry a log of the random outcomes that actually occurred, and a
+rebuilt engine consumes those instead of generating its own. **Keep calling `Math.random()`
+wherever you already do.** You only have to log what it returned.
 
 MIT licensed. Run it, fork it, adapt it.
 
@@ -18,19 +23,23 @@ MIT licensed. Run it, fork it, adapt it.
 
 Two artifacts, two jobs.
 
-### 1. [`ASK.md`](ASK.md) — the probe. One afternoon.
+### 1. [`ASK.md`](ASK.md) — the minimal ask. Start here.
 
-One self-contained file. It answers whether a faithful export is possible at all, and proves
-it with **five golden replays that reproduce on a clean process**.
+One self-contained file, and deliberately short. It asks for four things: your content data
+**exactly as it already exists**, read access to the engine, **replay logs**, and one
+scope decision.
 
-Those five replays are the real test. If they reproduce, a full export is straightforward.
-If they cannot be produced, nothing in a larger bundle would be trustworthy — and you
-learned that in an afternoon instead of a week.
+It does **not** ask you to write a rules specification, classify your card effects, or design
+a state schema. Whoever rebuilds your game has to do that anyway while rebuilding — asking
+you first would mean the work gets done twice.
 
-Before them it asks three questions, in order, because the first gates the other two:
+The replay logs are the only part that needs engineering, because they are the only part that
+requires running your engine.
 
-1. Does **all** randomness come from one seedable generator?
-2. Can the complete game state be serialized and restored?
+The orienting questions:
+
+1. Can you log what each random call returns? (not reproduce it — just log it)
+2. Can the complete game state be serialized? (useful, not required)
 3. Can the engine run without a renderer?
 
 ### 2. [`engine-export/`](engine-export/) — the full specification.
@@ -45,7 +54,7 @@ Every artifact either half requests is foundational tooling for your own project
 
 | What the kit asks for | What it gives you |
 |---|---|
-| One seedable RNG source | Reproducible bug reports. "Seed 41823, turn 6" instead of "it happened once" |
+| Logging your random outcomes | Reproducible bug reports: replay the exact game instead of "it happened once" |
 | Serializable game state | Save/load, resume, spectate, crash recovery |
 | Legal-action enumeration | The foundation of any AI opponent, tutorial hint, or "you missed lethal" nudge |
 | Golden replays | A regression suite. Change a card, replay 500 games, see exactly what broke |
@@ -87,8 +96,8 @@ valid handoff.
 
 | Tier | Effort | You share | Fidelity risk |
 |---|---|---|---|
-| **0** Data export | ~1 day | Rules, cards, RNG contract, 100+ replays. No code, no API | Reimplementation drift, bounded by the replays |
-| **1** + contracts *(recommended)* | ~2–5 days | Plus state schema, action enumeration, effect DSL | Low, concentrated in bespoke cards |
+| **0** Data + replays | hours | Content data as-is, replay logs. No code access | Reimplementation drift, bounded by the replays |
+| **1** + code read access *(recommended)* | hours, for you | Plus read access, so the other side writes the spec from the source rather than guessing | Low |
 | **2** Headless engine | ~1–2 weeks | A container running your engine behind `reset()`/`step()` | **None** — nothing is reimplemented |
 
 Tier 2 *plus* the Tier 1 data export is ideal: the container guarantees fidelity today, the

@@ -5,25 +5,28 @@
 The validation protocol, and the single most important part of the bundle.
 
 **Why:** a rules document is an interpretation. Golden replays are ground truth. The
-receiving team reimplements your engine, replays all 100+ games, and either matches you
-exactly or knows precisely which card or which rule they got wrong. Without them, a clone
-is a guess that nobody can check — and the failure is silent: it plays plausibly and
-differs subtly.
+receiving team reimplements your engine, replays the games, and either matches you exactly
+or knows precisely which card or which rule they got wrong. Without them, a clone is a guess
+that nobody can check — and the failure is silent: it plays plausibly and differs subtly.
 
-A Tier 0 bundle with 500 good replays is more useful than a Tier 1 bundle with 20.
+A bundle with 500 good replays and no written spec is more useful than a polished spec with
+20 replays.
 
 ---
 
 ## What a replay is
 
-Seed, deck lists, the complete ordered action list, and state checkpoints. Schema:
-`../templates/replay.schema.json`.
+Deck lists, the recorded random outcomes, the complete ordered action list, and optional
+state dumps. Schema: `../templates/replay.schema.json`.
+
+**There is no seed.** Randomness is carried as a `random_log` of what actually came out, so
+replaying never depends on matching your RNG, shuffle algorithm or draw order — see
+`03-determinism.md`.
 
 ```json
 {
   "replay_id": "replay-0001",
   "engine_version": "1.4.2+abc1234",
-  "seed": 418237,
   "setup": {
     "players": [
       { "id": 0, "deck": ["card_001", "card_001", "card_014"], "hero": "hero_02" },
@@ -31,6 +34,11 @@ Seed, deck lists, the complete ordered action list, and state checkpoints. Schem
     ],
     "first_player": 0
   },
+  "random_log": [
+    { "seq": 0, "where": "setup.shuffle.p0", "kind": "permutation",
+      "result": ["card_014", "card_001", "card_001"] },
+    { "seq": 1, "where": "card.bolt.damage_roll", "kind": "int", "range": [1, 3], "result": 2 }
+  ],
   "actions": [
     { "seq": 0, "player": 0, "action": { "type": "mulligan", "keep": [0, 2, 3] } },
     { "seq": 1, "player": 0, "action": { "type": "play_card", "instance": "i_12",
@@ -60,6 +68,7 @@ include:
 | Slice | Minimum | Why |
 |---|---|---|
 | Per deck/archetype in the export | 10 each | Each exercises different cards |
+| **Cards with conditional randomness** | 5+ each | A branch that draws randomness only sometimes is where a log most often has a gap |
 | Per win condition | 5 each | Deck-out, timeout, draws and simultaneous death are where clones break |
 | **Bespoke-card games** | 10+ | Cards with `effect_dsl: null` are undescribed; replays are their *only* specification |
 | Shortest games you can produce | 5 | Setup and early-game edge cases |
@@ -111,7 +120,7 @@ Excluded from the hash: <timestamps, UI state, anything non-deterministic by des
 Canonicalization: <key ordering, number formatting — needed for cross-language agreement>
 ```
 
-**Document the hash canonicalization precisely.** The receiving team reimplements in a
+**Only relevant if you included state dumps.** Document the hash canonicalization precisely. The receiving team reimplements in a
 different language. If your JSON serializer orders keys differently or formats numbers
 differently from theirs, every hash mismatches and the bundle looks broken when it isn't.
 Specify key ordering and number formatting, or ship a short reference canonicalizer as data
@@ -119,11 +128,12 @@ rather than engine code.
 
 ---
 
-## If any replay fails to reproduce
+## If any replay fails to reproduce on your own engine
 
-Do not ship it, and do not quietly drop it. A non-reproducing replay is a **determinism bug
-in your engine** — one of the four killers in `03-determinism.md`. Find it, because it is
-also affecting your own ability to reproduce player bug reports.
+With recorded randomness this is much rarer than it used to be, because the replay no longer
+depends on your RNG behaving reproducibly. If it still happens, the cause is usually a random
+call site that is not being logged, or wall-clock / thread-scheduling influence on game
+logic. Both are worth finding regardless of this project.
 
 If it genuinely cannot be fixed in time: exclude the replay, document the cause in
 `NOTES.md` under "unresolved", and say which behaviors are therefore unverifiable. Honest

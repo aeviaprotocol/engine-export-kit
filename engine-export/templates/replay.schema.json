@@ -2,103 +2,262 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://aeviaprotocol.github.io/engine-export-kit/schemas/replay.schema.json",
   "title": "Golden replay",
-  "description": "One complete, verified game. The ground truth a reimplementation validates against. See reference/04-golden-replays.md",
+  "description": "One recorded game. The ground truth a reimplementation validates against. Randomness is carried as a recorded random_log rather than a seed, so replaying never depends on matching the studio's RNG, shuffle algorithm or draw order. See reference/04-golden-replays.md",
   "type": "object",
-  "required": ["replay_id", "engine_version", "seed", "setup", "actions", "outcome", "final_state_hash"],
+  "required": [
+    "replay_id",
+    "engine_version",
+    "setup",
+    "random_log",
+    "actions",
+    "outcome"
+  ],
   "properties": {
-    "replay_id": { "type": "string" },
-    "engine_version": { "type": "string" },
-    "content_version": { "type": "string" },
-    "seed": {
-      "description": "The ONLY source of randomness. Reconstructing from this seed plus the action list must reproduce the game exactly.",
-      "type": ["integer", "string"]
+    "replay_id": {
+      "type": "string"
+    },
+    "engine_version": {
+      "type": "string"
+    },
+    "content_version": {
+      "type": "string"
     },
     "coverage_tags": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Why this replay is in the corpus: bespoke_cards, trigger_collision, deck_out, longest_game, mirror, ..."
     },
     "setup": {
       "type": "object",
-      "required": ["players", "first_player"],
+      "required": [
+        "players",
+        "first_player"
+      ],
       "properties": {
         "players": {
           "type": "array",
           "minItems": 2,
           "items": {
             "type": "object",
-            "required": ["id", "deck"],
+            "required": [
+              "id",
+              "deck"
+            ],
             "properties": {
-              "id": { "type": "integer" },
+              "id": {
+                "type": "integer"
+              },
               "deck": {
                 "type": "array",
-                "items": { "type": "string" },
-                "description": "Card ids, in pre-shuffle order. The shuffle is derived from the seed."
+                "items": {
+                  "type": "string"
+                },
+                "description": "Card ids in pre-shuffle order. The resulting order comes from random_log, not from a seed."
               },
-              "hero": { "type": ["string", "null"] },
-              "starting_resources": { "type": ["object", "null"] }
+              "hero": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "starting_resources": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
             }
           }
         },
-        "first_player": { "type": "integer" },
-        "config": { "type": ["object", "null"], "description": "Game mode, rule variants, timers" }
+        "first_player": {
+          "type": "integer"
+        },
+        "config": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Game mode, rule variants, timers"
+        }
       }
     },
     "actions": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["seq", "player", "action"],
+        "required": [
+          "seq",
+          "player",
+          "action"
+        ],
         "properties": {
-          "seq": { "type": "integer" },
-          "player": { "type": "integer" },
+          "seq": {
+            "type": "integer"
+          },
+          "player": {
+            "type": "integer"
+          },
           "action": {
             "type": "object",
-            "required": ["type"],
+            "required": [
+              "type"
+            ],
             "properties": {
-              "type": { "type": "string" },
-              "instance": { "type": ["string", "null"], "description": "Card instance id, stable across the game" },
-              "targets": { "type": "array", "items": { "type": "string" } },
-              "choices": { "type": ["object", "null"], "description": "Resolution of any choice point this action opens" }
+              "type": {
+                "type": "string"
+              },
+              "instance": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Card instance id, stable across the game"
+              },
+              "targets": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "choices": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "Resolution of any choice point this action opens"
+              }
             }
           },
           "state_hash_after": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Strongly recommended after EVERY action. Cheap, and localizes a divergence to the exact action that caused it."
           }
         }
       }
     },
-    "checkpoints": {
-      "type": "array",
-      "description": "Full state at start, after every turn, and at the end.",
-      "items": {
-        "type": "object",
-        "required": ["after_seq", "state_hash"],
-        "properties": {
-          "after_seq": { "type": "integer" },
-          "state_hash": { "type": "string" },
-          "state": { "type": ["object", "null"], "description": "Conforms to rules/state-schema.json" }
+    "outcome": {
+      "type": "object",
+      "required": [
+        "winner",
+        "reason"
+      ],
+      "properties": {
+        "winner": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "null for a draw"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "turns": {
+          "type": "integer"
         }
       }
     },
-    "outcome": {
-      "type": "object",
-      "required": ["winner", "reason"],
-      "properties": {
-        "winner": { "type": ["integer", "null"], "description": "null for a draw" },
-        "reason": { "type": "string" },
-        "turns": { "type": "integer" }
-      }
+    "final_state_hash": {
+      "type": "string"
     },
-    "final_state_hash": { "type": "string" },
     "verification": {
       "type": "object",
       "description": "Filled by the generating studio. A replay shipped without passing verification is a determinism bug, not a replay.",
       "properties": {
-        "replayed_clean_process": { "type": "boolean" },
-        "all_hashes_matched": { "type": "boolean" },
-        "platforms_tested": { "type": "array", "items": { "type": "string" } }
+        "replayed_clean_process": {
+          "type": "boolean"
+        },
+        "all_hashes_matched": {
+          "type": "boolean"
+        },
+        "platforms_tested": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "random_log": {
+      "type": "array",
+      "description": "Every random decision the engine made, in the order it made them. This is what replaces a seed: the rebuilt engine consumes these outcomes instead of generating its own, so the shuffle algorithm and draw count become irrelevant. A seedable or single-source RNG is NOT required -- only the ability to log what came out.",
+      "items": {
+        "type": "object",
+        "required": [
+          "seq",
+          "kind",
+          "result"
+        ],
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "description": "Contiguous from 0, in draw order."
+          },
+          "where": {
+            "type": "string",
+            "description": "Stable label for the call site, e.g. 'setup.shuffle.p0' or 'card.bolt.damage_roll'. Strongly recommended: when a rebuild drifts, this names the decision point where control flow parted, which is a better clue than a mismatched end state."
+          },
+          "kind": {
+            "enum": [
+              "int",
+              "bool",
+              "choice",
+              "permutation",
+              "float"
+            ]
+          },
+          "result": {
+            "description": "What came out. For permutation, the resulting order (or indices)."
+          },
+          "range": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "For kind=int, the inclusive [lo, hi] the engine drew from. REQUIRED in practice: a recorded 2 falls inside both [1,3] and [1,4], so without the declared range a rebuild can reproduce every replay perfectly and still generate out-of-distribution games during training. This field is what prevents a simulator that looks correct and is not."
+          },
+          "p": {
+            "type": "number",
+            "description": "For kind=bool, the probability. Same reasoning as range."
+          },
+          "options_count": {
+            "type": "integer",
+            "description": "For kind=choice, how many options were offered."
+          }
+        }
+      }
+    },
+    "state_dumps": {
+      "type": "array",
+      "description": "Serialized state at the start, after each turn, and at the end. Optional -- replays work without it, but a divergence can then only be localized to the whole game.",
+      "items": {
+        "type": "object",
+        "required": [
+          "after_seq",
+          "state_hash"
+        ],
+        "properties": {
+          "after_seq": {
+            "type": "integer"
+          },
+          "state_hash": {
+            "type": "string"
+          },
+          "state": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Conforms to rules/state-schema.json"
+          }
+        }
       }
     }
   }

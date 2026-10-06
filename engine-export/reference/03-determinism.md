@@ -1,171 +1,115 @@
-# 03 — Determinism, state and fork
+# 03 — Randomness, state and fork
 
-**Last verified: 2026-10-05**
+**Last verified: 2026-10-06**
 
-The contract that makes everything else possible. If this file's requirements aren't met,
-the bundle cannot be validated, the receiving team cannot A/B a change, and golden replays
-are meaningless.
-
-Three properties, in order of how much they unlock:
-
-| Property | Unlocks |
-|---|---|
-| **Seeded determinism** | replays, regression tests, bug reproduction, any trustworthy benchmark |
-| **Serializable state** | save/load, resume, spectating, parallel evaluation |
-| **Fork (clone a state mid-game)** | forward search — Monte Carlo tree search, enumerate-and-evaluate agents, "did I miss lethal" analysis |
-
-Fork is the one studios don't expect to care about and the one that most changes what an
-agent can do. It is also nearly free if state is serializable.
+> **This file changed in v0.2.** It used to require a seedable, single-source RNG. It no
+> longer does, and that removes what was the single biggest obstacle to exporting a game.
+> If you read an earlier version: you can keep calling `Math.random()` wherever you already
+> do.
 
 ---
 
-## 1. Seeded determinism
+## The distinction that makes this cheap
 
-### Requirement
+Two different things get confused, and separating them is what lets you skip the refactor:
 
-> One seed, one action sequence, one identical final state. Every time, on a clean process.
+| To... | You need | Who provides it |
+|---|---|---|
+| **Reimplement** the game | the **distributions** — "1–3 uniform", "30% chance", "uniform permutation" | readable from your code, or declared in the log |
+| **Validate** against a recorded game | the **realized outcomes** — what actually came out, in order | your replay log |
 
-### The single-source rule
+Neither needs your RNG to be seedable, single-sourced, or reproducible. A rebuilt engine in
+replay mode **consumes your recorded outcomes instead of generating its own**, which makes
+your shuffle algorithm, your draw order and your language's RNG implementation irrelevant.
 
-All randomness comes from **one** seedable generator, threaded through the game state. Not
-the language's global RNG. Not `Math.random()`, `random.random()`, `rand()`, `Random.Range`
-or `UnityEngine.Random`. Not one generator per subsystem.
-
-**If your engine doesn't work this way, this is the fix to make first.** It is usually
-small and contained: create a `GameRandom` owned by the game state, seed it at match
-creation, route every draw through it, and fail the build on any direct use of the global
-RNG. The studio gets reproducible bug reports out of it; the export is a side effect.
-
-### Enumerate every draw
-
-In `rng/RNG.md`, list every random decision in the game in the order it occurs:
-
-```markdown
-| # | When | What | Distribution | Draws |
-|---|------|------|--------------|-------|
-| 1 | match setup | first player | uniform 2 | 1 |
-| 2 | match setup | deck shuffle (P1) | Fisher-Yates | n-1 |
-| 3 | match setup | deck shuffle (P2) | Fisher-Yates | n-1 |
-| 4 | mulligan | replacement draws | — | varies |
-| 5 | card: <name> | random enemy target | uniform over legal | 1 |
-```
-
-Name the shuffle algorithm. "We shuffle the deck" is not reproducible; "Fisher-Yates,
-iterating downward, consuming one draw per swap" is.
-
-### The four determinism killers
-
-Check for each explicitly and document any you find — they cause replays to diverge across
-machines, which looks like a clone bug and isn't:
-
-1. **Wall-clock** — `now()`, timers, timeouts affecting outcomes rather than just UX.
-2. **Thread scheduling / async** — resolution order depending on which coroutine finishes first.
-3. **Hash iteration order** — iterating a dictionary or set where order affects the result. Use ordered collections anywhere that touches game logic.
-4. **Floating-point** — accumulated float arithmetic in damage or stat calculation can differ across platforms and compiler flags. Integers everywhere in game logic is the robust answer; if you can't, document the exposure.
-
-### Verify it
-
-Not "we believe it's deterministic" — measure:
-
-```
-for each of 100 seeds:
-    run the same match twice, same actions, two clean processes
-    assert serialize(final_state_a) == serialize(final_state_b)
-```
-
-Then run it across platforms if you ship on more than one. Report the result in `RNG.md`.
+Those three were the usual reasons an export failed. They no longer apply.
 
 ---
 
-## 2. Serializable state
+## What you do have to do: log it
 
-### Requirement
+Every random decision, appended in the order it happens:
 
-> `deserialize(serialize(s)) == s` functionally: identical legal actions, identical outcome
-> distribution under the same seed, for the remainder of the game.
-
-### What gets missed
-
-The schema is almost always incomplete on the first attempt. The usual omissions:
-
-- **Card instance state** — damage taken, buffs, counters, attachments, summoning sickness, "has attacked this turn", silenced flags, cost modifiers. The definition id is not enough.
-- **Stable instance identity** — effects that reference "the minion that triggered this" need an id that survives serialization.
-- **Pending resolution** — the stack or queue mid-resolution, if a state can be captured there.
-- **RNG position** — the generator's internal state, or a draw counter sufficient to resume the stream.
-- **Per-turn counters** — "cards played this turn", "second spell this turn", "damage dealt this turn".
-- **Visibility** — which player knows what. Needed for correct agent observations *and* for determinization against hidden information.
-- **Zone ordering** — deck order especially. An unordered deck breaks replays silently.
-
-### Verify it
-
-```
-play a random game, serializing after every single action
-for each snapshot:
-    deserialize into a fresh engine
-    continue with the recorded remaining actions and the same seed
-    assert the final state matches the original
+```json
+{"seq": 0, "where": "setup.shuffle.p0", "kind": "permutation",
+ "result": ["card_014", "card_001", "card_001"]}
+{"seq": 1, "where": "card.bolt.damage_roll", "kind": "int", "range": [1, 3], "result": 2}
+{"seq": 2, "where": "card.hex.proc",        "kind": "bool", "p": 0.3,       "result": false}
 ```
 
-A snapshot that can't resume identically means the schema is missing a field. This test
-finds it precisely.
+`kind` is one of `int`, `bool`, `choice`, `permutation`, `float`. `seq` is contiguous from 0.
+
+Practically: wrap your random calls in a logging helper, or monkeypatch the RNG in a debug
+build. If your engine already has a replay or spectate feature, you may have most of this.
+
+**Missing a call site is recoverable and self-diagnosing.** The rebuilt engine runs out of
+log entries at a precise point, and the error names the site it was expecting — so you are
+told exactly which one you missed. Iterative, not all-or-nothing.
+
+### Two fields that carry real weight
+
+**`where`** — any stable label for the call site. When a rebuild drifts from your engine,
+this names the exact decision point where control flow parted, and it fires *at that moment*
+rather than one action later as a mismatched state. It is a strictly better diagnostic than a
+state hash, and it costs you a string literal.
+
+**`range` / `p`** — the distribution, not just the outcome. **This is the one that prevents a
+silent failure**, so it is worth being precise about why:
+
+> A recorded `2` sits inside both `[1,3]` and `[1,4]`. If the log records only the outcome, a
+> rebuild that reads the range wrong **reproduces every one of your replays perfectly** — and
+> then generates out-of-distribution games the moment an agent plays. Every automated check
+> passes. Nobody notices.
+
+Declaring the distribution turns that into an exact, immediate error. Sites where you omit it
+remain unverifiable, and the receiving team must record them as such.
 
 ---
 
-## 3. Fork
+## State serialization — useful, not required
 
-### Requirement
+If you can serialize game state, include dumps at the start, after each turn, and at the end.
+They are what let a divergence be localized to the action that caused it rather than to the
+whole game.
 
-> Clone a mid-game state, play N different continuations from it, and each is unaffected by
-> the others.
+If you cannot, say so and skip them. Replays still work; debugging is slower.
 
-If serialization is correct, fork is `deserialize(serialize(s))` — nearly free. Two things
-to get right:
+Where a serializer exists, these are the fields most often forgotten:
 
-- **No shared mutable references** between the clone and the original. Deep copy, or make game objects immutable.
-- **RNG divergence**: forked branches must either share the seed (for a controlled comparison) or take explicit distinct sub-seeds (for Monte Carlo rollouts). Document which, and expose the choice.
+- **Card instance state** — damage, buffs, counters, attachments, summoning sickness, "has attacked this turn", silenced flags, cost modifiers. A definition id is not enough.
+- **Stable instance identity** that survives serialization — effects referencing "the minion that triggered this" need it.
+- **Zone ordering**, deck order especially.
+- **Per-turn counters** — "cards played this turn", "second spell this turn".
+- **Per-player visibility** — which player knows what.
+- Pending resolution, if a state can be captured mid-resolution.
 
-Report in `rng/RNG.md`: whether fork is supported, how, and the approximate cost of one
-clone (microseconds? milliseconds?). That number sets how deep a search agent can go, so
-it is genuinely load-bearing for the receiving team.
+Note what is *not* on that list any more: the RNG's internal position. The log carries it.
 
-### Why it matters
+### If you serialize, declare your canonicalization
 
-Forward search — enumerating candidate action sequences and simulating each — is the
-strongest cheap method for turn-based card games, and it is entirely gated on fork. The
-reference result in this genre is a hand-written search agent with no machine learning
-reaching a ~52% win rate on a commercial deckbuilder. None of that is possible without
-state cloning.
+Key ordering and number formatting. A rebuild in another language has to match it byte for
+byte, or every hash mismatches for a reason unrelated to the game. Integers everywhere in
+game logic is the robust choice; accumulated floats diverge across platforms.
 
 ---
 
-## Report template for `rng/RNG.md`
+## Fork — worth a sentence even though we do not ask for it
 
-```markdown
-# RNG and determinism contract
-Engine version:
+If state serializes, the receiving team gets state cloning nearly free, and that unlocks
+forward search — enumerating candidate lines and simulating each. It is the strongest cheap
+method for turn-based card games.
 
-## Sources of randomness
-Number of independent generators: <should be 1>
-Algorithm: <e.g. xoshiro256**, PCG32, Mersenne Twister>
-Seeded at: <where> · Seed type: <int64?> · State serialized: yes/no
+You do not have to build it. But if your state has shared mutable references that make deep
+copying unsafe, mentioning it saves the other side a day.
 
-## Draw order
-<the table above>
+---
 
-## Shuffle
-Algorithm: · Draws consumed: · Direction/iteration order:
+## What this buys you
 
-## Determinism killers present
-Wall-clock:         none / <describe>
-Thread scheduling:  none / <describe>
-Hash iteration:     none / <describe>
-Floating point:     none / <describe>
+The logging is the part you keep, and it is foundational tooling rather than a favor:
 
-## Verification
-Same-seed replay, 100 seeds, 2 clean processes: PASS / FAIL (<n> divergences)
-Cross-platform:     PASS / FAIL / not tested
-Serialize-resume at every action: PASS / FAIL
+- **Reproducible bug reports.** Replay the exact game instead of "it happened once."
+- **A regression suite.** Change a card, replay 500 recorded games, see precisely what moved.
+- **Balance CI.** Thousands of simulated games per commit.
 
-## Fork
-Supported: yes/no · Mechanism: · Cost per clone: · Sub-seed policy:
-```
+A studio that adds random logging has a replay system. The export is the side effect.

@@ -23,7 +23,7 @@ warnings: list[str] = []
 info: list[str] = []
 
 REQUIRED_BY_TIER = {
-    0: ["MANIFEST.json", "rules/RULES.md", "cards/cards.json", "rng/RNG.md", "NOTES.md"],
+    0: ["MANIFEST.json", "cards/cards.json", "NOTES.md"],
     1: ["rules/state-schema.json", "rules/actions.md", "cards/effects.md"],
     2: [],
 }
@@ -60,7 +60,7 @@ def check_manifest(root: Path):
     m = load_json(root / "MANIFEST.json", "MANIFEST.json")
     if m is None:
         return None
-    for key in ("game", "export", "contents", "determinism"):
+    for key in ("game", "export", "contents", "randomness"):
         if key not in m:
             errors.append(f"MANIFEST.json: missing top-level '{key}'")
     tier = m.get("export", {}).get("tier")
@@ -69,29 +69,40 @@ def check_manifest(root: Path):
         tier = 0
     info.append(f"tier {tier}")
 
-    det = m.get("determinism", {})
-    if not det.get("single_rng_source"):
+    rnd = m.get("randomness", {})
+    if not rnd.get("all_random_sites_logged"):
         errors.append(
-            "determinism.single_rng_source is false -- replays cannot be ground truth. "
-            "Fix the RNG before sending (reference/03-determinism.md)"
+            "randomness.all_random_sites_logged is false -- replays cannot be ground truth. "
+            "Note this does NOT require a seedable or single-source RNG, only logging what "
+            "each random call returned (reference/03-determinism.md)"
         )
-    if not det.get("same_seed_verified"):
-        errors.append("determinism.same_seed_verified is false -- the blocking check in CHECKLIST.md has not passed")
-    if not det.get("cross_platform_verified"):
-        warnings.append("cross-platform replay not verified -- hashes may diverge on another OS")
-    if not det.get("fork_supported"):
-        warnings.append("fork not supported -- forward-search agents (the strongest cheap method here) will not be possible")
-    for killer in det.get("known_killers", []) or []:
-        warnings.append(f"declared determinism killer: {killer}")
+    for site in rnd.get("sites_missing_distribution", []) or []:
+        warnings.append(
+            f"random site without a declared distribution: {site} -- outcomes there replay, but the "
+            "distribution is unverifiable, so generated games may be out of distribution"
+        )
+    if rnd.get("notes", "").strip() not in ("", "<any random decision NOT routed through the log>"):
+        info.append(f"randomness notes: {rnd['notes']}")
 
     hashing = m.get("hashing", {})
     canon = str(hashing.get("canonicalization", ""))
-    if not canon or canon.startswith("<"):
-        errors.append(
-            "hashing.canonicalization is unset -- a reimplementation in another language "
-            "will mismatch every hash for the wrong reason"
+    if (not canon or canon.startswith("<")) and any((root / "replays").glob("*.json")) \
+            and _any_state_dumps(root):
+        warnings.append(
+            "hashing.canonicalization is unset while state_dumps are present -- a reimplementation "
+            "in another language will mismatch every hash for the wrong reason"
         )
     return m, tier
+
+
+def _any_state_dumps(root: Path) -> bool:
+    for p in (root / "replays").glob("*.json"):
+        try:
+            if json.loads(p.read_text(encoding="utf-8")).get("state_dumps"):
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def check_required_files(root: Path, tier: int):
@@ -204,14 +215,40 @@ def check_replays(root: Path, card_ids: set[str]):
         return
     tags: dict[str, int] = {}
     verified = hashed_per_action = 0
+    dist_missing: set[str] = set()
+    sites_unnamed = [0]
+    total_draws = [0]
 
     for p in files:
         data = load_json(p, p.name)
         if data is None:
             continue
-        for field in ("replay_id", "engine_version", "seed", "setup", "actions", "outcome", "final_state_hash"):
+        for field in ("replay_id", "engine_version", "setup", "random_log", "actions", "outcome"):
             if field not in data:
                 errors.append(f"{p.name}: missing required field '{field}'")
+
+        rlog = data.get("random_log")
+        if rlog is None:
+            pass
+        elif not isinstance(rlog, list):
+            errors.append(f"{p.name}: random_log must be an array")
+        else:
+            for n, e in enumerate(rlog):
+                if not isinstance(e, dict):
+                    errors.append(f"{p.name}: random_log[{n}] is not an object"); continue
+                if e.get("seq") != n:
+                    errors.append(f"{p.name}: random_log[{n}].seq is {e.get('seq')!r}, expected {n} "
+                                  "(must be contiguous from 0, in draw order)")
+                    break
+                if "result" not in e:
+                    errors.append(f"{p.name}: random_log[{n}] has no 'result'")
+                if not e.get("where"):
+                    sites_unnamed[0] += 1
+                if e.get("kind") == "int" and "range" not in e:
+                    dist_missing.add(e.get("where") or f"<unnamed @{n}>")
+                if e.get("kind") == "bool" and "p" not in e:
+                    dist_missing.add(e.get("where") or f"<unnamed @{n}>")
+            total_draws[0] += len(rlog)
 
         setup = data.get("setup") or {}
         players = setup.get("players") or []
@@ -233,26 +270,38 @@ def check_replays(root: Path, card_ids: set[str]):
             hashed_per_action += 1
 
         v = data.get("verification") or {}
-        if v.get("replayed_clean_process") and v.get("all_hashes_matched"):
+        if v.get("replayed_clean_process"):
             verified += 1
-        else:
-            errors.append(f"{p.name}: not marked as verified -- never ship an unverified replay (reference/04-golden-replays.md)")
 
         for t in data.get("coverage_tags") or []:
             tags[t] = tags.get(t, 0) + 1
 
     n = len(files)
-    info.append(f"{n} replays ({verified} verified, {hashed_per_action} with per-action hashes)")
-    if n < 100:
-        warnings.append(f"only {n} replays -- the spec asks for 100 minimum, 300+ preferred")
-    if hashed_per_action < n:
+    info.append(f"{n} replays, {total_draws[0]} logged random draws")
+    if n < 20:
+        warnings.append(f"only {n} replays -- 20 is the minimum useful corpus, 100+ for a full export")
+    if dist_missing:
+        shown = ", ".join(sorted(dist_missing)[:6])
         warnings.append(
-            f"{n - hashed_per_action} replays lack per-action state hashes -- a divergence can "
-            "then only be localized to the whole game, not to the action that caused it"
+            f"{len(dist_missing)} random site(s) log an outcome but no distribution ({shown}). "
+            "A recorded 2 falls inside both [1,3] and [1,4], so without 'range'/'p' a rebuild can "
+            "reproduce every replay and still generate out-of-distribution games. Add the distribution."
         )
-    for tag, want in (("bespoke_cards", 10), ("trigger_collision", 10)):
+    if sites_unnamed[0]:
+        warnings.append(
+            f"{sites_unnamed[0]} random_log entries have no 'where' label -- a divergence can then "
+            "only be located by state, not by the decision point where control flow parted"
+        )
+    if hashed_per_action < n:
+        info.append(f"{n - hashed_per_action} replays have no per-action state hashes (optional)")
+    # Thresholds scale with corpus size: a 20-replay starter bundle cannot carry 10 of each slice.
+    want = 1 if n < 60 else 10
+    for tag in ("bespoke_cards", "trigger_collision", "win_condition"):
         if tags.get(tag, 0) < want:
-            warnings.append(f"coverage tag '{tag}': {tags.get(tag, 0)} replays, spec asks for {want}+")
+            warnings.append(
+                f"coverage tag '{tag}': {tags.get(tag, 0)} replays, {want}+ recommended at this "
+                f"corpus size ({n} replays)"
+            )
     if tags:
         info.append("coverage tags: " + ", ".join(f"{k}={v}" for k, v in sorted(tags.items())))
 
