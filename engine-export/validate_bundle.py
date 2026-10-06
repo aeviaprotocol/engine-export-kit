@@ -72,6 +72,34 @@ def check_manifest(root: Path):
         tier = 0
     info.append(f"tier {tier}")
 
+    voc = m.get("vocabulary", {})
+    if not voc:
+        warnings.append(
+            "MANIFEST has no 'vocabulary' block -- the concentrated-vs-diffuse measurement "
+            "(reference/02-effect-dsl.md) is what tells the receiving team whether a reusable "
+            "effect vocabulary exists. It takes minutes and changes the whole approach."
+        )
+    else:
+        n, m80 = voc.get("distinct_ops"), voc.get("ops_covering_80pct")
+        tail = voc.get("tail_pct_ops_used_by_2_or_fewer_cards")
+        if isinstance(n, int) and isinstance(m80, int) and n:
+            shape = "DIFFUSE" if (m80 > 200 or (isinstance(tail, (int, float)) and tail > 60)) else "CONCENTRATED"
+            info.append(f"effect vocabulary: {n} ops, {m80} cover 80%, tail {tail}% -> {shape}")
+            declared = str(voc.get("shape", "")).upper()
+            if declared and declared != shape:
+                warnings.append(
+                    f"MANIFEST declares vocabulary.shape={declared!r} but the numbers indicate "
+                    f"{shape}. Re-check reference/02-effect-dsl.md -- the two paths diverge sharply."
+                )
+            if shape == "DIFFUSE":
+                n_rep = len(list((root / "replays").glob("*.json")))
+                if n_rep < 100:
+                    warnings.append(
+                        f"vocabulary is DIFFUSE but only {n_rep} replays are present. With no reusable "
+                        "vocabulary, per-card behavior is specified ONLY by the replays that exercise "
+                        "it -- a diffuse bundle needs a much larger corpus to be faithful."
+                    )
+
     rnd = m.get("randomness", {})
     if not rnd.get("all_random_sites_logged"):
         errors.append(

@@ -1,144 +1,232 @@
 ---
-name: game-export-gather
-description: Gather the raw material an external team needs to rebuild this card game as a headless simulator for AI testing. Collects the content data files as-is, identifies where the engine makes random decisions, adds logging to record them, and produces replay logs of real games. Gathering only - it does not write specifications.
+name: game-export
+description: Export a card game for external AI testing by running inside the game's own codebase. Extracts the effect vocabulary and random call sites from the source, adds logging, records replay games, and produces a portable bundle. The code never leaves the repository - only extracted data the studio reviews.
 ---
 
-# What we need from you
+# Export this game for external AI testing
 
-We want to rebuild your game as a headless simulator, in isolation, so we can run AI agents
-against it as many times as we like without touching your build.
+You are running **inside the studio's own repository**. An outside team wants to rebuild this
+game as a headless simulator so they can run AI agents against it in isolation.
 
-**We do the analysis. You ship raw material.** Writing up your rules, classifying card
-effects, designing a state schema — that is our job, and we have to do it anyway while
-rebuilding. Asking you to do it first would mean you doing work twice.
+**The code never leaves.** You read it; you emit data. Everything you produce goes in a
+`bundle/` directory the studio reviews before sending.
 
-So this is short. Four things.
+That constraint shapes the whole job: the outside team cannot read the source, so anything
+that requires reading it has to be extracted here. The good news is that most of it is
+**extraction, not authorship** — mechanical, scriptable, and fast even on a very large
+codebase.
 
 ---
 
-## 1. Your content data, exactly as it already exists
+## Step 0 — Report the shape of the codebase before extracting anything
 
-Card definitions, keywords, sets, stats, effects — in whatever form they live in. JSON, XML,
-YAML, CSV, a spreadsheet export, a database dump, ScriptableObjects, resource files.
+Find and report, with file paths:
 
-**Do not transform, clean up or document it.** If it is one messy file, send the messy file.
-Normalizing it is our problem, and your normalization would lose information we need.
+| | |
+|---|---|
+| **Card / content definitions** | data files, a database, or one class per card |
+| **Effect / ability system** | how card behavior is expressed |
+| **Turn loop** | phases, priority, the state machine |
+| **Game state** | what holds the truth |
+| **Random call sites** | every place the game draws randomness |
+| **Match setup** | deck construction, mulligan, first player, starting resources |
 
-## 2. Read access to the engine code
+Stop and show this before writing anything. If the studio disagrees with your read of the
+architecture, now is when it is cheap to fix.
 
-A repository invite, or a zip of the relevant modules — the turn loop, the effect system,
-the resolution order, the card implementations.
+---
 
-This is how we learn what is random and what the odds are, which rules the code actually
-implements versus what the design doc says, and where the edge cases live. It is far more
-reliable than you describing it to us, and it means you write nothing.
+## Step 1 — Extract the effect vocabulary, and measure its shape
 
-We do not redistribute it, and nothing from it goes into anything we publish.
+This measurement decides the whole approach, and it takes minutes. **Do it before anything
+else.**
 
-**If you cannot share code, say so now** — there is a different, heavier process for that
-case, and it is better to know before you start.
+Count how card behavior is expressed. The method depends on the codebase:
 
-## 3. Replay logs — the only part that needs engineering
+```bash
+# Cards defined in a text/data DSL — count the operation names
+grep -rhoE '\b(SP|AB|DB)\$ *\w+' cards/ | sort | uniq -c | sort -rn
 
-**This is the one thing only you can do**, because it requires running your engine.
+# Cards defined as code — the effect CLASS names are the vocabulary
+grep -rhoE 'new (\w*Effect)\(' src/cards/ | sort | uniq -c | sort -rn
 
-We need recorded games. For each game, a JSON file with:
+# Cards defined as scripts — the API functions they call
+grep -rhoE '\b(Card|Duel|Effect)\.\w+' scripts/ | sort | uniq -c | sort -rn
+```
+
+Then report three numbers:
+
+```
+distinct operations             : N
+operations covering 80% of uses : M
+operations used by <=2 cards    : T  (as a % of N)
+```
+
+### What the numbers mean — this is the fork in the road
+
+| Shape | Looks like | What follows |
+|---|---|---|
+| **Concentrated** | a handful of operations cover 80%; small tail | A reusable vocabulary exists. Extract it as a list of operations with their parameters, and most cards become data. |
+| **Diffuse** | hundreds of operations needed for 80%; most of the vocabulary used by one or two cards | **There is no vocabulary to extract.** Do not try to build a DSL — you will be writing a catalogue of one-offs. Ship the card catalogue plus the exact rules text, and let the replays specify per-card behavior. |
+
+Measured on two real engines to calibrate: a text-DSL engine needed **24 operations for 80%**
+with a **15% tail** (concentrated); a code-per-card engine of similar size needed **2,083 for
+80%** with a **92% tail** (diffuse). Same genre, same scale, opposite answers. Assuming the
+wrong one wastes weeks.
+
+**If diffuse, say so loudly in your report.** It means the outside team needs far more
+replays, because each card's behavior is pinned only by replays that exercise it. That is a
+conversation to have before anyone commits.
+
+Whichever shape you find, emit `bundle/effects.md`: the operation list with counts, their
+parameters, and the selector/targeting vocabulary. Counts matter — they tell the other side
+what to implement first.
+
+---
+
+## Step 2 — Export the content data, as it exists
+
+Copy the card/content data files into `bundle/content/` **untransformed**. If it is one messy
+file, copy the messy file. Normalizing it is the other side's problem, and your normalization
+would lose information they need.
+
+If cards are classes rather than data, extract one record per card: stable id, cost, type,
+stats, the keywords it uses, the exact in-game rules text, and the operations it invokes.
+Do not paste source code — emit the structured summary.
+
+---
+
+## Step 3 — Log the randomness
+
+Every random decision, appended in draw order, to `bundle/replays/*.json`:
 
 ```json
-{
-  "replay_id": "game-001",
-  "engine_version": "1.4.2+abc1234",
-  "setup": {
-    "players": [{"id": 0, "deck": ["card_001", "card_001", "card_014"]},
-                {"id": 1, "deck": ["card_007", "card_022"]}],
-    "first_player": 0
-  },
-  "random_log": [
-    {"seq": 0, "where": "setup.shuffle.p0", "kind": "permutation",
-     "result": ["card_014", "card_001", "card_001"]},
-    {"seq": 1, "where": "card.bolt.damage_roll", "kind": "int",
-     "range": [1, 3], "result": 2},
-    {"seq": 2, "where": "card.hex.proc", "kind": "bool", "p": 0.3, "result": false}
-  ],
-  "actions": [
-    {"seq": 0, "player": 0, "action": {"type": "play_card", "instance": "i_12",
-                                       "targets": ["i_31"]}},
-    {"seq": 1, "player": 0, "action": {"type": "end_turn"}}
-  ],
-  "state_dumps": [{"after_seq": 1, "state": { }}],
-  "outcome": {"winner": 0, "reason": "opponent_hero_destroyed", "turns": 11}
-}
+{"seq": 0, "where": "dealer.shuffle",      "kind": "permutation", "result": [21, 23, 22, 4]}
+{"seq": 1, "where": "card.bolt.damage",    "kind": "int",  "range": [1, 3], "result": 2}
+{"seq": 2, "where": "card.hex.proc",       "kind": "bool", "p": 0.3,        "result": false}
 ```
 
-### The `random_log` is the important part, and it is easier than it sounds
+**You do not need a seedable or single-source RNG, and you do not need reproducibility.**
+Keep calling `Math.random()` wherever you already do. The rebuilt engine replays these
+outcomes instead of generating its own, so your shuffle algorithm and draw order stop
+mattering.
 
-Every time your engine makes a random decision, append what came out. **You do not need a
-seedable or single-source RNG, and you do not need reproducibility.** Keep calling
-`Math.random()` wherever you already do. We just need to know what it returned.
+Four details, each of which was learned the hard way:
 
-Our engine replays these outcomes instead of generating its own, so your shuffle algorithm,
-your draw order and your language's RNG become irrelevant. That removes what is normally the
-biggest obstacle in this kind of handoff.
+- **`result` must use stable, serializable identifiers** — card ids, or indices into the input. Never object references or `repr()` output. Dumping a shuffled deck with a default serializer yields `"<Card object at 0x7a3e...>"`, which differs every run and means nothing to anyone else.
+- **`where`** — any stable label. When the rebuild drifts, this names the exact decision point where control flow parted, which beats a mismatched end state. Deriving it from the call stack costs nothing and needs no edits to game code.
+- **`range` / `p`** — the distribution, not just the outcome. A recorded `2` sits inside both `[1,3]` and `[1,4]`, so without this a rebuild reproduces every replay perfectly and then generates out-of-distribution games once an agent plays. Every automated check passes and nobody notices.
+- **For `choice`, declare the option order.** A recorded choice is ambiguous otherwise.
 
-Two details that carry real weight:
-
-- **`where`** — any stable label for the call site. When our rebuild drifts from yours, this tells us the exact decision point where control flow parted, which is a far better clue than a mismatched end state.
-- **`range` / `p`** — the distribution, not just the outcome. A recorded `2` sits inside both `[1,3]` and `[1,4]`, so without the distribution we can reproduce every one of your games perfectly and still generate wrong ones when the agent plays. This single field is what prevents a simulator that looks correct and is not.
-
-Practically: wrap your random calls in a logging helper, or monkeypatch the RNG for a
-debug build. If you miss a call site, our engine runs out of log entries at a precise point
-and we tell you exactly which one — it is iterative, not all-or-nothing.
-
-### How many, and of what
-
-**20 games** is enough to start. Any play quality — a scripted bot, random legal moves, your
-own test harness, or recorded human games. We care about coverage, not skill:
-
-- a few per deck or archetype you want us to support
-- at least one ending by each possible win condition, including deck-out, timeout and draws
-- a few that exercise your most awkward cards, the ones whose logic you would warn a new hire about
-- your shortest and longest games
-
-### `state_dumps`
-
-Whatever your state serializer already produces, at the start, after each turn, and at the
-end. If you have no serializer, skip it and say so — the replays still work, we just lose
-the ability to pinpoint *where* a divergence started.
-
-## 4. One decision from you
-
-What is in and out of scope. Game modes, unreleased content, anything you would rather not
-share. Unreleased cards can be **renamed** — `"Dragonlord Ignis"` → `"card_4471"`, art and
-flavor dropped, cost and effect kept exactly. We need to know what a card does, never what
-it is called.
-
-**Never send** credentials, server endpoints, keys, player data, telemetry, anti-cheat logic,
-matchmaking internals, or pack odds and drop rates. Grep for
-`api_key|secret|token|password|https?://` before sending and check the matches by hand.
+Practically: wrap the random calls in a logging helper, or monkeypatch the RNG in a debug
+build. **Missing a call site is recoverable**: the rebuilt engine runs out of log entries at a
+precise point and names the site it expected.
 
 ---
 
-## What you get out of it, independent of us
+## Step 4 — Record replays, and derive the coverage tags
 
-The replay logging is the part you keep:
+**40 games** minimum, more if step 1 came out diffuse. Any play quality — a scripted bot,
+random legal moves, the existing test harness.
 
-- **Reproducible bug reports.** Replay the exact game instead of "it happened once."
-- **A regression suite.** Change a card, replay 500 recorded games, see precisely what moved.
-- **Balance CI.** Thousands of simulated games per commit.
-- **Balance findings from us.** An agent playing 100,000 games finds degenerate lines no playtester will, and rebuilding your rules engine from your code is the most thorough review it will ever get. Both come back to you.
+Per game: setup, the `random_log`, the ordered action list, and — if a state serializer
+exists — a state dump at the start, after each turn, and at the end. Dumps are optional but
+they are what lets a divergence be located to the action that caused it.
+
+### Tag each replay from what actually happened, never from what you expect
+
+Derive tags by instrumenting the recorder. **Do not assign them by rule.**
+
+This is not pedantry. In a test of this kit, an exporter tagged every seventh game
+`deck_reshuffle` by arithmetic. Not one of the twenty games ever reshuffled. A bug planted
+inside the reshuffle path then passed all twenty replays — while the bundle advertised
+coverage of exactly that mechanic. **A fabricated tag converts missing coverage into false
+confidence.**
+
+The `random_log` makes this free: the set of `where` labels a replay contains *is* the set of
+random code paths it exercised.
+
+Deliberately seek out: each deck or archetype, each win condition (including deck-out,
+timeout and draws), **the branches that are hard to reach** — reshuffles, empty decks, maximum
+board or hand states — simultaneous triggers, and the cards whose logic you would warn a new
+hire about. Random play alone will not reach these, and those are exactly the paths a rebuild
+gets wrong.
 
 ---
 
-## Send
+## Step 5 — Write down only what cannot be extracted
+
+`bundle/rules.md`. Short. The extraction covered the mechanical parts; this covers what
+reading alone can answer:
+
+1. **Resolution order when several triggers fire at once.** The single most common cause of a
+   wrong rebuild. Stack, queue, or active-player-first? Is it deterministic? Describe the
+   behavior the code **implements**, and say so if it differs from design intent.
+2. Turn structure and phases, briefly.
+3. Every win, loss and draw condition — including simultaneous death.
+4. Zones: ordered or not, limits, overflow, who can see what.
+5. Timing edge cases: death mid-resolution, zone change mid-resolution, effects referencing
+   removed objects.
+
+Then `bundle/NOTES.md`:
+
+- Known bugs the rebuild must reproduce — the replays depend on them, so hiding them produces a clone that silently disagrees
+- Intentional quirks that look like bugs
+- **Anything you could not determine from the code** — flagged, never guessed. A wrong spec is far worse than a missing one, because it produces a clone that is confidently wrong.
+- Cards whose behavior resists description, listed by id
+- Deliberately out of scope
+
+---
+
+## Step 6 — Scope, privacy, validate
+
+Unreleased content can be **renamed**: `"Dragonlord Ignis"` → `"card_4471"`, art and flavor
+dropped, cost and behavior kept exactly. Behavior is what matters; names are not.
+
+**Never put in the bundle:** source code, credentials, server endpoints, keys, player data,
+telemetry, anti-cheat logic, matchmaking internals, pack odds or drop rates. Grep the finished
+bundle for `api_key|secret|token|password|https?://` and review every match by hand.
+
+Then validate:
+
+```bash
+python3 validate_bundle.py bundle/
+```
+
+Standard library only, nothing to install. Errors block; warnings advise. Fix the errors and
+re-run until it exits 0.
+
+---
+
+## Step 7 — Report to the studio
 
 ```
-content/        your data files, untouched
-replays/        20+ JSON files as above
-NOTES.md        known bugs we should reproduce, cards you would warn us about,
-                anything deliberately out of scope
+VOCABULARY : N distinct ops · M cover 80% · T% tail  ->  CONCENTRATED / DIFFUSE
+CARDS      : total · how behavior is expressed · how many resist description
+RANDOM     : sites logged · sites still unlogged · sites with no declared distribution
+REPLAYS    : count · coverage tags DERIVED from the runs · branches never reached
+STATE      : serializer available? dumps included?
+RULES      : resolution order documented? differs from design intent?
+UNRESOLVED : what we could not determine from the code
+NOT SENT   : what was held back and why
 ```
 
-Plus the code access, however you prefer to grant it.
+Be explicit about what the receiving team will **not** be able to reproduce. That sentence is
+worth more than a larger bundle.
 
-Then we take it from there. Expect questions — mostly about resolution order when several
-triggers fire at once, because that is where rebuilds usually go wrong.
+---
+
+## What the studio gets out of this
+
+Every artifact here is foundational tooling, not a favor:
+
+| Produced | Keeps paying for itself as |
+|---|---|
+| Random logging | Reproducible bug reports: replay the exact game instead of "it happened once" |
+| Replay corpus | A regression suite: change a card, replay 500 games, see precisely what moved |
+| Extracted effect vocabulary | A balance dashboard, and an honest map of how much one-off logic the codebase carries |
+| The coverage measurement | Which code paths the existing tests never reach |
+
+Plus, from the receiving side: balance findings from an agent playing 100,000 games, and the
+bugs found while rebuilding the rules engine from the extracted spec — which is the most
+thorough review that engine will ever get.

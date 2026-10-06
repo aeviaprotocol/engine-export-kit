@@ -90,12 +90,31 @@ A starting set. **Extend it to fit your game** — this is a template, not a sta
 matters is that it is closed, documented, and that every composed card uses only listed
 primitives.
 
-**Expect to need far more than this list.** Measured on Forge: **194 distinct operations,
-253 keywords, and 1,207 distinct parameter names** across 34,074 cards. The encouraging half
-of that measurement: **24 operations cover 80% of all occurrences and 64 cover 95%**, while
-15% of the vocabulary appears in two cards or fewer. So build the top 25 first, get most of
-the collection working, and treat the tail as the tail — but do not plan for 25 to be the
-final number.
+**Before building any of it, measure whether a vocabulary exists at all.** This is the single
+most important measurement in the export, it takes minutes, and getting it wrong wastes weeks.
+
+Count the distinct operations, how many cover 80% of occurrences, and what share of the
+vocabulary is used by two cards or fewer. Two real engines, same genre, comparable size,
+opposite answers:
+
+| | Cards | Distinct ops | Ops for 80% | Tail (≤2 cards) | Verdict |
+|---|---|---|---|---|---|
+| **Forge** — cards in a text DSL | 34,074 | 194 | **24** | 15% | **Concentrated** |
+| **XMage** — one Java class per card | 32,498 | 8,469 | **2,083** | **92%** | **Diffuse** |
+
+**Concentrated** → a reusable vocabulary genuinely exists. Build the top ~25 operations, get
+most of the collection working as data, and treat the tail as a tail. Forge also carries 253
+keywords and 1,207 distinct parameter names, so do not plan for 25 to be the final number.
+
+**Diffuse** → **there is no vocabulary to extract, and you should not build a DSL.** When
+card-specific logic becomes a card-specific class, the "vocabulary" is a catalogue of one-offs:
+92% of XMage's effect classes serve two cards or fewer. Writing a DSL for that is writing
+32,000 special cases. Ship the card catalogue plus exact rules text instead, and let the
+replays specify per-card behavior — which means the corpus needs to be much larger, because
+each card is pinned only by the replays that exercise it.
+
+The practical consequence: in a diffuse codebase, **replay count replaces DSL coverage** as
+the thing that determines whether a rebuild is faithful. Negotiate for it up front.
 
 **Effect operations.** `deal_damage` · `heal` · `draw` · `discard` · `destroy` ·
 `transform` · `summon` · `return_to_hand` · `modify_stats` (temporary or permanent) ·

@@ -6,19 +6,25 @@ headless, deterministic, reproducible simulator — and *prove* the rebuild is f
 
 You do not send source code. You send an export.
 
-**Status: v0.3 — now tested end to end.** Run as both sides against two real open-source
-games: [RLCard](https://github.com/datamllab/rlcard)'s UNO for the full loop (export →
-validate → rebuild from scratch → **20/20 replays reproduced exactly**), and
-[Forge](https://github.com/Card-Forge/forge)'s 34,074 Magic card scripts to check the
-effect model at commercial scale.
+**Status: v0.4 — tested end to end against three real games.**
 
-That test found five real bugs in this kit, all now fixed. The most useful one: mutation
-testing planted a bug in a code path no replay exercised, and it passed every replay — while
-the bundle's coverage tags claimed that path was covered. **Coverage tags must be derived
-from the run, not asserted**, and the kit now says so and reports the evidence instead.
+| Game | What it tested | Result |
+|---|---|---|
+| [RLCard](https://github.com/datamllab/rlcard) UNO | the full loop: export → validate → rebuild from scratch | **20/20 replays reproduced exactly** |
+| [Forge](https://github.com/Card-Forge/forge) | the effect model on 34,074 cards in a text DSL | 24 operations cover 80% — a vocabulary exists |
+| [XMage](https://github.com/magefree/mage) | the effect model on 32,498 cards as Java classes | 2,083 operations for 80%, 92% tail — no vocabulary exists |
 
-Still not run against a closed commercial engine. Please open an issue when you hit a rough
-edge — that is what this being public is for.
+Those last two are the same genre at the same scale and they gave **opposite answers**, which
+is why step 1 of the export is now a five-minute measurement of whether a reusable effect
+vocabulary exists at all. Assuming the wrong one wastes weeks.
+
+The testing found six real bugs in this kit, all fixed. The most useful: mutation testing
+planted a bug in a code path no replay exercised, and it passed every replay — while the
+bundle's coverage tags claimed that path was covered. **Coverage tags must be derived from the
+run, not asserted.**
+
+**You run this inside your own repository and the code never leaves it.** Still not run
+against a closed commercial engine — please open an issue when you hit a rough edge.
 
 **v0.2 removed the biggest obstacle.** v0.1 required a seedable, single-source RNG. It no
 longer does: replays carry a log of the random outcomes that actually occurred, and a
@@ -33,24 +39,22 @@ MIT licensed. Run it, fork it, adapt it.
 
 Two artifacts, two jobs.
 
-### 1. [`ASK.md`](ASK.md) — the minimal ask. Start here.
+### 1. [`ASK.md`](ASK.md) — start here. Runs inside your repo.
 
-One self-contained file, and deliberately short. It asks for four things: your content data
-**exactly as it already exists**, read access to the engine, **replay logs**, and one
-scope decision.
+One self-contained file. Point your coding agent at it and it works through seven steps in
+your own codebase, emitting a `bundle/` directory you review before anything is sent.
 
-It does **not** ask you to write a rules specification, classify your card effects, or design
-a state schema. Whoever rebuilds your game has to do that anyway while rebuilding — asking
-you first would mean the work gets done twice.
-
-The replay logs are the only part that needs engineering, because they are the only part that
-requires running your engine.
+**The source never leaves the repository.** The agent reads it and emits extracted data.
+Most of the work is extraction rather than authorship — grep-scale, even on tens of
+thousands of cards — and prose is asked for only where reading the code is the only way to
+know: resolution order when several triggers fire at once, win conditions, timing edge cases.
 
 The orienting questions:
 
-1. Can you log what each random call returns? (not reproduce it — just log it)
-2. Can the complete game state be serialized? (useful, not required)
-3. Can the engine run without a renderer?
+1. Does a reusable effect vocabulary exist, or is most card logic one-off? (step 1 — measure it)
+2. Can you log what each random call returns? (not reproduce it — just log it)
+3. Can the complete game state be serialized? (useful, not required)
+4. Can the engine run without a renderer?
 
 ### 2. [`engine-export/`](engine-export/) — the full specification.
 
@@ -106,8 +110,8 @@ valid handoff.
 
 | Tier | Effort | You share | Fidelity risk |
 |---|---|---|---|
-| **0** Data + replays | hours | Content data as-is, replay logs. No code access | Reimplementation drift, bounded by the replays |
-| **1** + code read access *(recommended)* | hours, for you | Plus read access, so the other side writes the spec from the source rather than guessing | Low |
+| **0** Data + replays | hours | Content data as-is, replay logs | Reimplementation drift, bounded by the replays |
+| **1** + extracted spec *(recommended)* | hours | Plus the effect vocabulary, resolution order and state schema, extracted in your repo | Low |
 | **2** Headless engine | ~1–2 weeks | A container running your engine behind `reset()`/`step()` | **None** — nothing is reimplemented |
 
 Tier 2 *plus* the Tier 1 data export is ideal: the container guarantees fidelity today, the

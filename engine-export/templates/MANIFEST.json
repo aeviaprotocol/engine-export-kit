@@ -69,5 +69,14 @@
     "sites_missing_distribution": [],
     "logging_mechanism": "<wrapper / monkeypatch / native replay system>",
     "notes": "<any random decision NOT routed through the log>"
+  },
+  "vocabulary": {
+    "$comment": "Step 1 of ASK.md. Measured, not estimated. Decides the whole approach.",
+    "how_behavior_is_expressed": "<text DSL | one class per card | embedded script | mixed>",
+    "distinct_ops": 0,
+    "ops_covering_80pct": 0,
+    "tail_pct_ops_used_by_2_or_fewer_cards": 0,
+    "shape": "CONCENTRATED | DIFFUSE",
+    "extraction_command": "<the grep/script used, so the number is reproducible>"
   }
 }
