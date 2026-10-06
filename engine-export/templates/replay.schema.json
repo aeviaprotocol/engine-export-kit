@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aeviaprotocol.github.io/engine-export-kit/schemas/replay.schema.json",
+  "$id": "https://ai-trainer.local/schemas/replay.schema.json",
   "title": "Golden replay",
   "description": "One recorded game. The ground truth a reimplementation validates against. Randomness is carried as a recorded random_log rather than a seed, so replaying never depends on matching the studio's RNG, shuffle algorithm or draw order. See reference/04-golden-replays.md",
   "type": "object",

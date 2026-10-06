@@ -5,6 +5,12 @@ description: Export a card game for external AI testing by running inside the ga
 
 # Export this game for external AI testing
 
+> **This is phase 1 of two.** Phase 1 is data: it establishes whether the game can be
+> reproduced externally and gives an outside team enough to build agents. Phase 2, later and
+> optional, is a small SDK integrated into the game so agents play the real engine directly.
+> Nothing here commits the studio to phase 2 — and phase 1's output is what phase 2 is
+> designed against, so none of it is wasted either way.
+
 You are running **inside the studio's own repository**. An outside team wants to rebuild this
 game as a headless simulator so they can run AI agents against it in isolation.
 

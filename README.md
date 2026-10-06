@@ -35,6 +35,21 @@ MIT licensed. Run it, fork it, adapt it.
 
 ---
 
+## The shape of the engagement
+
+Two phases, documented in [`PROTOCOL.md`](PROTOCOL.md).
+
+| | Phase 1 — qualify | Phase 2 — play |
+|---|---|---|
+| You do | run `ASK.md` in your repo | integrate a small SDK |
+| It produces | data: effect vocabulary, rules, replays | agents driving your real engine |
+| Your cost | hours, no commitment | days, a dependency in your build |
+
+**Phase 1 commits you to nothing**, and its output is what phase 2 is designed against, so
+none of it is wasted either way. The gate between them is `ASK.md` step 1 — the
+five-minute measurement of whether your card logic has a reusable vocabulary or is mostly
+one-off. That answer decides whether an external rebuild is realistic at all.
+
 ## Start here, not with the full spec
 
 Two artifacts, two jobs.

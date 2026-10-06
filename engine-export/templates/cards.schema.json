@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aeviaprotocol.github.io/engine-export-kit/schemas/cards.schema.json",
+  "$id": "https://ai-trainer.local/schemas/cards.schema.json",
   "title": "Card database export",
   "description": "Template schema. EXTEND IT to fit your game — add your own stat and type fields. What matters is that it is closed, documented, and that cards.json validates against whatever you ship. See reference/01-export-spec.md and reference/02-effect-dsl.md",
   "type": "object",
