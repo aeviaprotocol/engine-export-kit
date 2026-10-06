@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aeviaprotocol.github.io/engine-export-kit/schemas/replay.schema.json",
+  "title": "Golden replay",
+  "description": "One complete, verified game. The ground truth a reimplementation validates against. See reference/04-golden-replays.md",
+  "type": "object",
+  "required": ["replay_id", "engine_version", "seed", "setup", "actions", "outcome", "final_state_hash"],
+  "properties": {
+    "replay_id": { "type": "string" },
+    "engine_version": { "type": "string" },
+    "content_version": { "type": "string" },
+    "seed": {
+      "description": "The ONLY source of randomness. Reconstructing from this seed plus the action list must reproduce the game exactly.",
+      "type": ["integer", "string"]
+    },
+    "coverage_tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Why this replay is in the corpus: bespoke_cards, trigger_collision, deck_out, longest_game, mirror, ..."
+    },
+    "setup": {
+      "type": "object",
+      "required": ["players", "first_player"],
+      "properties": {
+        "players": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["id", "deck"],
+            "properties": {
+              "id": { "type": "integer" },
+              "deck": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Card ids, in pre-shuffle order. The shuffle is derived from the seed."
+              },
+              "hero": { "type": ["string", "null"] },
+              "starting_resources": { "type": ["object", "null"] }
+            }
+          }
+        },
+        "first_player": { "type": "integer" },
+        "config": { "type": ["object", "null"], "description": "Game mode, rule variants, timers" }
+      }
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["seq", "player", "action"],
+        "properties": {
+          "seq": { "type": "integer" },
+          "player": { "type": "integer" },
+          "action": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": { "type": "string" },
+              "instance": { "type": ["string", "null"], "description": "Card instance id, stable across the game" },
+              "targets": { "type": "array", "items": { "type": "string" } },
+              "choices": { "type": ["object", "null"], "description": "Resolution of any choice point this action opens" }
+            }
+          },
+          "state_hash_after": {
+            "type": ["string", "null"],
+            "description": "Strongly recommended after EVERY action. Cheap, and localizes a divergence to the exact action that caused it."
+          }
+        }
+      }
+    },
+    "checkpoints": {
+      "type": "array",
+      "description": "Full state at start, after every turn, and at the end.",
+      "items": {
+        "type": "object",
+        "required": ["after_seq", "state_hash"],
+        "properties": {
+          "after_seq": { "type": "integer" },
+          "state_hash": { "type": "string" },
+          "state": { "type": ["object", "null"], "description": "Conforms to rules/state-schema.json" }
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "required": ["winner", "reason"],
+      "properties": {
+        "winner": { "type": ["integer", "null"], "description": "null for a draw" },
+        "reason": { "type": "string" },
+        "turns": { "type": "integer" }
+      }
+    },
+    "final_state_hash": { "type": "string" },
+    "verification": {
+      "type": "object",
+      "description": "Filled by the generating studio. A replay shipped without passing verification is a determinism bug, not a replay.",
+      "properties": {
+        "replayed_clean_process": { "type": "boolean" },
+        "all_hashes_matched": { "type": "boolean" },
+        "platforms_tested": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

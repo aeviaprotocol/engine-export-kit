@@ -1,0 +1,59 @@
+{
+  "$comment": "Template. Replace every <...> placeholder. See reference/01-export-spec.md",
+  "bundle_format_version": "0.1",
+  "game": {
+    "name": "<game name>",
+    "studio": "<studio>",
+    "engine_version": "<semver or version+commit, e.g. 1.4.2+abc1234>",
+    "content_version": "<card set / patch identifier>"
+  },
+  "export": {
+    "date": "<YYYY-MM-DD>",
+    "tier": 1,
+    "tier_notes": "<what is and is not included at this tier>",
+    "generated_by": "<tool or agent, and version>",
+    "contact": "<who to ask about ambiguities>"
+  },
+  "contents": {
+    "cards": {
+      "total": 0,
+      "collectible": 0,
+      "enabled": 0,
+      "keyword_only": 0,
+      "dsl_composed": 0,
+      "bespoke": 0,
+      "unreleased_handling": "included | anonymized | excluded"
+    },
+    "replays": {
+      "total": 0,
+      "verified": 0,
+      "divergent": 0
+    },
+    "rules_sections_complete": "<n>/11",
+    "state_schema_included": true,
+    "actions_spec_included": true,
+    "effects_dsl_included": true
+  },
+  "determinism": {
+    "single_rng_source": true,
+    "rng_algorithm": "<e.g. xoshiro256**>",
+    "same_seed_verified": true,
+    "cross_platform_verified": false,
+    "serialize_resume_verified": true,
+    "fork_supported": true,
+    "known_killers": []
+  },
+  "hashing": {
+    "algorithm": "sha256",
+    "canonicalization": "<key ordering and number formatting rules>",
+    "excluded_fields": []
+  },
+  "files": [
+    { "path": "rules/RULES.md", "sha256": "<hex>", "bytes": 0 },
+    { "path": "cards/cards.json", "sha256": "<hex>", "bytes": 0 },
+    { "path": "rng/RNG.md", "sha256": "<hex>", "bytes": 0 },
+    { "path": "NOTES.md", "sha256": "<hex>", "bytes": 0 }
+  ],
+  "license": "<terms under which this bundle is shared>",
+  "unresolved_count": 0
+}

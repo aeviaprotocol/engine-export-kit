@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aeviaprotocol.github.io/engine-export-kit/schemas/cards.schema.json",
+  "title": "Card database export",
+  "description": "Template schema. EXTEND IT to fit your game — add your own stat and type fields. What matters is that it is closed, documented, and that cards.json validates against whatever you ship. See reference/01-export-spec.md and reference/02-effect-dsl.md",
+  "type": "object",
+  "required": ["schema_version", "cards"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "keyword_glossary": {
+      "description": "Every keyword used by any card, with its EXACT semantics. 'Taunt' is not self-explanatory across games.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["semantics"],
+        "properties": {
+          "semantics": { "type": "string" },
+          "edge_cases": { "type": "string" },
+          "resolution_priority": { "type": ["integer", "null"] }
+        }
+      }
+    },
+    "cards": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/card" }
+    }
+  },
+  "$defs": {
+    "card": {
+      "type": "object",
+      "required": ["id", "name", "cost", "type", "effect_text_exact", "effect_dsl"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable and never reused. Replays reference this."
+        },
+        "name": { "type": "string" },
+        "set": { "type": "string" },
+        "rarity": { "type": ["string", "null"] },
+        "collectible": { "type": "boolean" },
+        "enabled": {
+          "type": "boolean",
+          "description": "false for disabled/removed cards that still appear in old replays"
+        },
+        "cost": {
+          "description": "Number, or an object for alternate/multi-resource costs",
+          "type": ["integer", "object"]
+        },
+        "type": { "type": "string", "description": "minion / spell / weapon / land / etc." },
+        "subtypes": { "type": "array", "items": { "type": "string" } },
+        "stats": {
+          "type": "object",
+          "description": "Game-specific. Add your own fields.",
+          "properties": {
+            "attack": { "type": ["integer", "null"] },
+            "health": { "type": ["integer", "null"] },
+            "durability": { "type": ["integer", "null"] }
+          }
+        },
+        "keywords": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Only mechanics the engine handles generically. Each must appear in keyword_glossary."
+        },
+        "effect_dsl": {
+          "description": "Behavior per reference/02-effect-dsl.md, or null if bespoke. NEVER approximate — null is correct, approximate is a silent wrongness bug.",
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/effect" },
+            { "type": "array", "items": { "$ref": "#/$defs/effect" } }
+          ]
+        },
+        "effect_text_exact": {
+          "type": "string",
+          "description": "The exact in-game card text, verbatim. Required even when effect_dsl is present."
+        },
+        "bespoke_reason": {
+          "type": ["string", "null"],
+          "description": "Required when effect_dsl is null: why it resists the DSL."
+        },
+        "balance_history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["date", "change"],
+            "properties": {
+              "date": { "type": "string" },
+              "engine_version": { "type": "string" },
+              "change": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "effect": {
+      "type": "object",
+      "required": ["trigger", "effects"],
+      "properties": {
+        "trigger": {
+          "type": "string",
+          "description": "on_play, on_death, start_of_turn, continuous, activated, ... Document each in effects.md including whether it fires on both players' events and where it sits in resolution order."
+        },
+        "condition": { "type": ["object", "null"] },
+        "cost": { "type": ["object", "null"], "description": "For activated abilities" },
+        "effects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["op"],
+            "properties": {
+              "op": { "type": "string", "description": "A primitive from your documented vocabulary" },
+              "amount": {
+                "description": "Fixed integer, or a dynamic value. Document WHEN a dynamic value is evaluated — on play, on resolution, or continuously. Same text, three different games.",
+                "type": ["integer", "object", "null"]
+              },
+              "target": { "$ref": "#/$defs/target" },
+              "duration": { "type": ["string", "null"], "description": "permanent / end_of_turn / while_present" }
+            }
+          }
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["selector"],
+      "properties": {
+        "selector": { "type": "string" },
+        "mode": { "enum": ["choose", "random", "all", "automatic"] },
+        "count": { "description": "integer, or {\"up_to\": n}, or \"all\"", "type": ["integer", "string", "object"] },
+        "filters": { "type": ["object", "null"] },
+        "on_no_legal_target": {
+          "type": ["string", "null"],
+          "description": "fizzle / skip_effect / card_uncastable — the behavior people forget to specify"
+        }
+      }
+    }
+  }
+}
