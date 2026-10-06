@@ -77,6 +77,28 @@ remain unverifiable, and the receiving team must record them as such.
 
 ---
 
+## The cheaper substitute: complete state dumps
+
+Instrumenting random call sites is the one part of this that takes real engineering. There is
+a path that skips it: **emit a complete state dump after every action**, including deck order,
+and let the receiving team validate transitions rather than replay games.
+
+It works because the state after a shuffle *is* the shuffle result. Measured on a real engine
+over 869 transitions with no random log whatsoever: a correct rebuild matched **98.5%**, with
+the 1.5% residue falling exactly on the transitions that consume randomness; a rebuild with
+one planted bug dropped to 93.1%, and every extra mismatch named the single wrong field.
+
+The residue is not just tolerable noise — **it locates your random call sites**, which is the
+work you skipped.
+
+Two things it costs, both worth stating plainly:
+
+- **Distributions are invisible.** Dumps show what came out, never the range it came from. A rebuild cannot distinguish a 1–3 roll from a 1–4 roll, so games it *generates* may be out of distribution while every transition still validates. Mitigate with a one-line note per random site declaring the distribution.
+- **No whole-game replay.** Single-step validation never confirms that a full game comes out the same end to end, so errors that compound over a long game go unchecked.
+
+Prefer the random log where it is cheap. Take this path where it is not — full dumps plus a
+short list of distributions is close to as good, and usually much less work.
+
 ## State serialization — useful, not required
 
 If you can serialize game state, include dumps at the start, after each turn, and at the end.

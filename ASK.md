@@ -122,6 +122,35 @@ Practically: wrap the random calls in a logging helper, or monkeypatch the RNG i
 build. **Missing a call site is recoverable**: the rebuilt engine runs out of log entries at a
 precise point and names the site it expected.
 
+### Cheaper alternative: skip this step and dump full state instead
+
+If instrumenting the random call sites is awkward — scattered calls, a language that makes
+wrapping painful, nobody who knows where they all are — **you can skip step 3 entirely** and
+instead emit a **complete** state dump after *every* action in step 4. Complete means every
+zone in order, including deck order.
+
+That works because the state after a shuffle *is* the shuffle result. The receiving team then
+validates one transition at a time: restore from dump N, apply action N, compare to dump N+1.
+
+Measured on a real engine, 869 transitions, no random log at all:
+
+| | Transitions matching |
+|---|---|
+| Correct rebuild | **98.5%** — the 1.5% residue is exactly the transitions that consume randomness |
+| Rebuild with one planted bug | 93.1% — and all 47 extra mismatches named the single wrong field |
+
+So the signal is clean and the noise is small, attributable, and useful: **the residue
+identifies your random call sites for you**, which is the step you just skipped.
+
+What you give up by taking this path:
+
+- **Distributions.** Dumps show realized values, never the range they came from. A rebuild cannot learn that a roll is 1–3 rather than 1–4, so the games it *generates* for agent training may be out of distribution even though every transition validates. If you take this path, list the distributions separately — a one-line note per random site is enough.
+- **Whole-game replay.** Single-step validation cannot confirm that a full recorded game comes out the same end to end, so compounding errors over a long game go unchecked.
+
+Both are real losses, and this path is still worth it when the alternative is not getting a
+bundle at all. **Full state dumps plus a short list of distributions is close to as good as
+the random log, and usually much less work.**
+
 ---
 
 ## Step 4 — Record replays, and derive the coverage tags
